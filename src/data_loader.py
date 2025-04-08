@@ -1,6 +1,6 @@
 import csv
 
-def get_audio(path: str):
+def get_audio_UrbanSound8K(path: str):
     """
     Extracts the paths, classes, and fold numbers of audio files from the UrbanSound8K dataset.
 
@@ -14,9 +14,9 @@ def get_audio(path: str):
             - fold_number (list): List of fold numbers corresponding to each audio file.
 
     Example:
-        >>> paths_list, class_list, fold_number = get_audio("./data/UrbanSound8K/")
+        >>> paths_list, class_list, fold_number = get_audio("./path/to/UrbanSound8K/")
         >>> print(paths_list[0])
-        ./data/UrbanSound8K/audio/fold1/101415-3-0-2.wav
+        ./path/to/UrbanSound8K/audio/fold1/101415-3-0-2.wav
     """
     metadata_path = path + "metadata/UrbanSound8K.csv"
     audio_path = path + "audio/"
@@ -30,7 +30,3 @@ def get_audio(path: str):
             paths_list.append(audio_path + "/fold" + line["fold"] + "/" + line["slice_file_name"])
 
     return paths_list, class_list, fold_number
-
-
-
-
