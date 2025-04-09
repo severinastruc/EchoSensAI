@@ -12,9 +12,16 @@ def load_config(config_path: str):
     Returns:
         dict: Configuration data as a dictionary.    
     """
-    if not os.path.exists(config_path):
-        raise FileNotFoundError(f"Configuration file not found: {config_path}")
+    try:
+        with open(config_path, 'r') as file:
+            config_file = json.load(file)
+        return config_file
     
-    with open(config_path, 'r') as file:
-        config_file = json.load(file)
-    return config_file
+    except FileNotFoundError:
+        print("The file does not exist.")
+        return None
+
+    except json.JSONDecodeError:
+        print("Invalid JSON format.")
+        return None
+    
