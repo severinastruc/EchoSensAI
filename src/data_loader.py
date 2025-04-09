@@ -61,7 +61,10 @@ def get_audio_properties(path: str):
     """
     y, sr = librosa.load(path, sr=None, mono=False)
     length = librosa.get_duration(y=y, sr=sr)
-    channel_number = np.shape(y)[0]
+    if y.ndim == 1:  # Mono audio
+        channel_number = 1
+    else:  # Multi-channel audio
+        channel_number = y.shape[0]
     return length, channel_number, sr
 
 def get_audio_ds_properties(paths: list, index = None):
@@ -84,3 +87,32 @@ def get_audio_ds_properties(paths: list, index = None):
     if index != None:
         properties_df.index = index
     return properties_df
+
+def get_properties_stat(properties_df: pd.DataFrame):
+    """
+    Compute statistics for audio file properties in a dataset.
+
+    Args:
+        properties_df (pandas.DataFrame): A DataFrame where each row corresponds to an audio file 
+                                          and columns represent properties such as "length", 
+                                          "channel_nb", and "sr".
+
+    Returns:
+        tuple:
+            - length_stats (list): [average length, max length, min length] of audio files in seconds.
+            - channel_nb (list): Unique values of the number of channels used in the dataset.
+            - sr_stat (list): Unique sample rates (in Hz) present in the dataset.
+    """
+    # Compute statistics for the "length" column
+    length_stats = [
+        properties_df["length"].mean(),  # Average length
+        properties_df["length"].max(),   # Maximum length
+        properties_df["length"].min()    # Minimum length
+    ]
+
+    # Get unique values for "channel_nb" and "sr" columns
+    channel_nb = properties_df["channel_nb"].unique().tolist()
+    sr_stat = properties_df["sr"].unique().tolist()
+    channel_nb.sort()
+    sr_stat.sort()
+    return length_stats, channel_nb, sr_stat
