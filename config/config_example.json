@@ -2,9 +2,11 @@
     "dataset_path": "path/to/data",
     "log_path": "path/to/log/",
     "results_path": "path/to/results/",
+    "results_path_stats": "path/to/results/stats/",
     "model_path": "path/to/models/",
     "constants": {
         "sample_rate": 44100,
         "num_classes": 10
     }
 }
+
