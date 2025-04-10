@@ -13,7 +13,7 @@ def load_config(config_path: str):
         dict: Configuration data as a dictionary.    
     """
     try:
-        with open(config_path, 'r') as file:
+        with open(config_path, "r") as file:
             config_file = json.load(file)
         return config_file
     
