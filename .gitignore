@@ -3,3 +3,5 @@ data/
 src/__pycache__/
 config/config.json
 results/
+__pycache__/
+tests/result_tests.txt
