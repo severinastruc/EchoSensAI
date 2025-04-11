@@ -6,7 +6,7 @@
     "model_path": "path/to/models/",
     "constants": {
         "sample_rate": 44100,
-        "num_classes": 10
+        "mono": "False"
     }
 }
 

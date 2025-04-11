@@ -141,27 +141,32 @@ def plot_channel_nb_histogram(properties_df: pd.DataFrame, output_path=None):
     else:
         plt.show()
 
-# Load configuration
-CONFIG_PATH = "./config/config.json"
-config = load_config(CONFIG_PATH)
 
-# Access dataset path
-DATASET_PATH = config["dataset_path"]
-STATS_PATH = config["results_path_stats"]
+def main():
+    # Load configuration
+    CONFIG_PATH = "./config/config.json"
+    config = load_config(CONFIG_PATH)
 
-# Get the audio properties
-name_list, paths_list, class_list, fold_number = dl.get_audio_UrbanSound8K(DATASET_PATH)
-properties_df = get_audio_ds_properties(paths_list, index=name_list)
+    # Access dataset path
+    DATASET_PATH = config["dataset_path"]
+    STATS_PATH = config["results_path_stats"]
 
-# Get statistics
-length_stats, channel_nb, sr_stat = get_properties_stat(properties_df)
+    # Get the audio properties
+    name_list, paths_list, class_list, fold_number = dl.get_audio_UrbanSound8K(DATASET_PATH)
+    properties_df = get_audio_ds_properties(paths_list, index=name_list)
 
-# Convert np.float64 to Python float
-length_stats = list(map(float, length_stats))
-print(f"Length Stats (avg, max, min): {np.around(length_stats,decimals=2)}")
-print("Unique Channel Numbers:", channel_nb)
-print("Unique Sample Rates:", sr_stat)
+    # Get statistics
+    length_stats, channel_nb, sr_stat = get_properties_stat(properties_df)
 
-# Plot, save, and display the histograms
-plot_sr_histogram(properties_df, output_path=STATS_PATH+"sr_histogram.png")
-plot_channel_nb_histogram(properties_df, output_path=STATS_PATH+"channel_nb_histogram.png")
+    # Convert np.float64 to Python float
+    length_stats = list(map(float, length_stats))
+    print(f"Length Stats (avg, max, min): {np.around(length_stats,decimals=2)}")
+    print("Unique Channel Numbers:", channel_nb)
+    print("Unique Sample Rates:", sr_stat)
+
+    # Plot, save, and display the histograms
+    plot_sr_histogram(properties_df, output_path=STATS_PATH+"sr_histogram.png")
+    plot_channel_nb_histogram(properties_df, output_path=STATS_PATH+"channel_nb_histogram.png")
+
+if __name__ == "main":
+    main()
