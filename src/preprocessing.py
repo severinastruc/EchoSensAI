@@ -39,18 +39,12 @@ class AudioProcess:
         # If the audio is mono (1D array), reshape it to (1, N)
         if self.y.ndim == 1:
             self.y = np.expand_dims(self.y, axis=0)
-
+        
+        # Set the number of channels
+        self.channel = self.y.shape[0]
+        
         # Initialize y_processed as a copy of y
         self.y_processed = np.copy(self.y)
-
-        # Set the number of channels
-        self.get_channel()
-
-    def get_channel(self):
-        if self.y.ndim == 1:  # Mono audio
-            self.channel = 1
-        else:  # Multi-channel audio
-            self.channel = self.y.shape[0]
 
     def resample(self):
         """
@@ -60,9 +54,53 @@ class AudioProcess:
         """
         if self.sr != self.target_sample_rate:
             y_resampled = []
-            for i, channel in enumerate(self.y_processed):
+            for channel in self.y_processed:
                 y_resampled.append(librosa.resample(channel, orig_sr=self.sr, target_sr=self.target_sample_rate))
             self.y_processed = np.array(y_resampled)
             self.sr = self.target_sample_rate
 
+    def pad_or_truncate(self, target_length_ms):
+        """
+        Pad or truncate the audio signal to a target length in milliseconds, keeping the center of the sound.
+    
+        Args:
+            target_length_ms (int): Target length in milliseconds.
+        """
+        # Convert target length from milliseconds to samples
+        target_length_samples = int((target_length_ms / 1000) * self.sr)
+    
+        # Get the current length of the audio signal
+        current_length = len(self.y_processed[0])
+    
+        if current_length < target_length_samples:
+            # Padding: Add symmetric padding to the left and right
+            padding = target_length_samples - current_length
+            left_padding = padding // 2
+            right_padding = padding - left_padding
+            y_padded = []
+            for channel in self.y_processed:
+                y_padded.append(np.pad(channel, (left_padding, right_padding), mode='constant'))
+            self.y_processed = np.array(y_padded)
+        else:
+            # Truncation: Keep the center of the audio signal
+            start = (current_length - target_length_samples) // 2
+            end = start + target_length_samples
+            y_truncated = []
+            for channel in self.y_processed:
+                y_truncated.append(channel[start:end])
+            self.y_processed = np.array(y_truncated)
 
+    def rechanneling(self):
+        """
+        Convert the audio signal to the target number of channels (self.channel_target).
+
+        """
+        if self.channel_target == 1 and self.channel > 1:  # Multi to mono
+                # Downmix all channels to mono by averaging the channels
+                self.y_processed = np.mean(self.y_processed, axis=0, keepdims=True)
+        elif self.channel_target == 2:  # Convert to stereo
+            if self.channel == 1:  # Mono to stereo
+                # Duplicate the mono channel to create stereo
+                self.y_processed = np.stack([self.y_processed[0], self.y_processed[0]], axis=0)
+
+    
