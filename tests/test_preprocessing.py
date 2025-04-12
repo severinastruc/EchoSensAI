@@ -79,7 +79,7 @@ def test_rechanneling(audio_processor, target_channels, expected_shape):
     """
     Test the rechanneling method for various input and target channel configurations.
     """
-    audio_processor.channel_target = target_channels
+    audio_processor.target_channel = target_channels
     audio_processor.rechanneling()
     # Assert the output shape matches the expected shape
     assert audio_processor.y_processed.shape == expected_shape
@@ -120,7 +120,7 @@ def test_preprocess(audio_processor, use_mel_spectrogram, target_channels, expec
         with padding = hop_length - (N mod hop_length) 
     """
     audio_processor.target_length_ms = 1000
-    audio_processor.channel_target = target_channels
+    audio_processor.target_channel = target_channels
     spectrogram = audio_processor.preprocess(use_mel_spectrogram=use_mel_spectrogram, n_mels=128, n_fft=2048, hop_length=512)
 
     # Assert the output is a numpy array

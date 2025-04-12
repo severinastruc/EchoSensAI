@@ -31,7 +31,7 @@ def get_audio_UrbanSound8K(path: str):
     with open(metadata_path, mode='r') as file:
         metadata_file = csv.DictReader(file)
         for line in metadata_file:
-            class_list.append(line["classID"])
+            class_list.append(int(line["classID"]))
 
             fold_number.append(line["fold"])
 

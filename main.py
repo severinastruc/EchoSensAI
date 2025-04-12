@@ -1,7 +1,8 @@
 import src.data_loader as dl
 from src.utils import load_config
-from src.preprocessing import AudioProcess
-from ds_stats import get_audio_properties
+import src.preprocessing as prep
+
+
 
 # Load configuration
 CONFIG_PATH = "./config/config.json"
@@ -13,28 +14,27 @@ SAMPLE_RATE = config["preprocess_constants"]["sample_rate_target"]
 
 
 # Get the audio list
-name_list, paths_list, class_list, fold_number = dl.get_audio_UrbanSound8K(DATASET_PATH)
+name_list, file_paths, class_list, fold_number = dl.get_audio_UrbanSound8K(DATASET_PATH)
 
-"""
-# Load audio
-file_path = paths_list[2]
-audio_processor = AudioProcess(file_path, target_sample_rate=48000)
-y, sr = audio_processor.load_audio()
+# Initialize the BatchAudioProcessor
+batch_processor = prep.BatchAudioProcessor(
+    file_paths=file_paths[:20],
+    labels=class_list[:20],
+    target_sample_rate=44100,
+    target_channel=2,
+    target_length_ms=1000
+)
 
-length, channel_number, sr = get_audio_properties(file_path)
-print(f"Sample rate: {sr}")
-print(f"Channel: {channel_number}")
-print(f"Length: {length}")
+# Serial processing
+spectrograms_serial, labels_serial = batch_processor.preprocess_batch_serial(
+    use_mel_spectrogram=True, n_mels=128, n_fft=2048, hop_length=512
+)
 
-# Resample audio
-y_resampled = audio_processor.resample_audio(y, sr)
 
-# Convert mono to stereo
-y_stereo = audio_processor.mono_to_stereo(y_resampled)
+# Parallel processing
+spectrograms_parallel, labels_parallel = batch_processor.preprocess_batch_parallel(
+    use_mel_spectrogram=True, n_mels=128, n_fft=2048, hop_length=512, n_jobs=4
+)
 
-# Compute spectrogram
-spectrogram = audio_processor.compute_spectrogram(y_stereo, audio_processor.target_sample_rate)
-
-# Plot spectrogram
-audio_processor.plot_spectrogram(spectrogram, audio_processor.target_sample_rate)
-"""
+print(f"Spectrograms_serial shape: {spectrograms_serial.shape}")
+print(f"Spectrograms_parallel shape: {spectrograms_parallel.shape}")

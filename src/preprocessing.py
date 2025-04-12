@@ -1,8 +1,7 @@
-import os
-
-import librosa
 import numpy as np
-
+import librosa
+import tensorflow as tf
+from joblib import Parallel, delayed
 
 class AudioProcess:
     """
@@ -22,7 +21,7 @@ class AudioProcess:
         # Target properties
         self.target_sample_rate = target_sample_rate
         self.target_channel = target_channel
-        self.target_length_ms = None
+        self.target_length_ms = target_length_ms
         # Signal properties
         self.sr = None
         self.channel = None
@@ -93,13 +92,13 @@ class AudioProcess:
 
     def rechanneling(self):
         """
-        Convert the audio signal to the target number of channels (self.channel_target).
+        Convert the audio signal to the target number of channels (self.target_channel).
 
         """
-        if self.channel_target == 1 and self.channel > 1:  # Multi to mono
+        if self.target_channel == 1 and self.channel > 1:  # Multi to mono
                 # Downmix all channels to mono by averaging the channels
                 self.y_processed = np.mean(self.y_processed, axis=0, keepdims=True)
-        elif self.channel_target == 2:  # Convert to stereo
+        elif self.target_channel == 2:  # Convert to stereo
             if self.channel == 1:  # Mono to stereo
                 # Duplicate the mono channel to create stereo
                 self.y_processed = np.stack([self.y_processed[0], self.y_processed[0]], axis=0)
@@ -159,19 +158,139 @@ class AudioProcess:
         Returns:
             numpy array: Normalized spectrogram or mel-spectrogram.
         """
+        print("beginning preprocess")
         self.load()
         self.resample()
-
+        print("resample done")
+        print(f"target_length_ms: {self.target_length_ms}")
         if self.target_length_ms != None:
+            print("padding")
             self.pad_or_truncate(self.target_length_ms)
-
+        print("rechanneling")
         self.rechanneling()
 
         if use_mel_spectrogram:
             spectrogram = self.compute_mel_spectrogram(n_mels=n_mels, n_fft=n_fft, hop_length=hop_length)
         else:
             spectrogram = self.compute_spectrogram(n_fft=n_fft, hop_length=hop_length)
-
+        print("preprocessing done")
         return self.normalize_spectrogram(spectrogram)
+
+
+class BatchAudioProcessor:
+    """
+    A class to preprocess audio files in batches for machine learning model training.
+    """
+
+    def __init__(self, file_paths, labels, target_sample_rate=44100, target_channel=2, target_length_ms=1000):
+        """
+        Initialize the BatchAudioProcessor.
+
+        Args:
+            file_paths (list of str): List of paths to audio files.
+            labels (list of int): List of labels corresponding to the audio files.
+            target_sample_rate (int): Target sample rate for resampling.
+            target_channel (int): Target number of channels (e.g., 1 for mono, 2 for stereo).
+            target_length_ms (int): Target length of audio in milliseconds.
+        """
+        self.file_paths = file_paths
+        self.labels = labels
+        self.target_sample_rate = target_sample_rate
+        self.target_channel = target_channel
+        self.target_length_ms = target_length_ms
+
+    def _process_file(self, file_path, use_mel_spectrogram, n_mels, n_fft, hop_length):
+        """
+        Helper function to preprocess a single audio file.
+
+        Args:
+            file_path (str): Path to the audio file.
+            use_mel_spectrogram (bool): Whether to compute mel-spectrograms instead of standard spectrograms.
+            n_mels (int): Number of mel bands (used only if use_mel_spectrogram is True).
+            n_fft (int): FFT window size.
+            hop_length (int): Number of samples between successive frames in the spectrogram computation.
+
+        Returns:
+            numpy array: Preprocessed spectrogram (shape: [frequency_bins, time_frames, n_channel]).
+        """
+        audio_processor = AudioProcess(
+            file_path=file_path,
+            target_sample_rate=self.target_sample_rate,
+            target_channel=self.target_channel,
+            target_length_ms=self.target_length_ms
+        )
+
+        # Preprocess the audio file
+        spectrogram = audio_processor.preprocess(
+            use_mel_spectrogram=use_mel_spectrogram,
+            n_mels=n_mels,
+            n_fft=n_fft,
+            hop_length=hop_length
+        )  # Shape: (n_channel, frequency_bins, time_frames)
+
+        # Transpose the spectrogram to match TensorFlow's expected input shape
+        return np.transpose(spectrogram, (1, 2, 0))  # Shape: (frequency_bins, time_frames, n_channel)
+
+    def preprocess_batch_serial(self, use_mel_spectrogram=False, n_mels=128, n_fft=2048, hop_length=512):
+        """
+        Preprocess all audio files in the batch using serial processing.
+
+        Args:
+            use_mel_spectrogram (bool): Whether to compute mel-spectrograms instead of standard spectrograms.
+            n_mels (int): Number of mel bands (used only if use_mel_spectrogram is True).
+            n_fft (int): FFT window size.
+            hop_length (int): Number of samples between successive frames in the spectrogram computation.
+
+        Returns:
+            tuple: A tuple containing:
+                - numpy array of preprocessed spectrograms (shape: [batch_size, frequency_bins, time_frames, n_channel]).
+                - numpy array of one-hot encoded labels.
+        """
+        spectrograms = []
+        for file_path in self.file_paths:
+            spectrogram = self._process_file(file_path, use_mel_spectrogram, n_mels, n_fft, hop_length)
+            spectrograms.append(spectrogram)
+
+        # Convert the list of spectrograms to a numpy array
+        spectrograms = np.array(spectrograms)  # Shape: (batch_size, frequency_bins, time_frames, n_channel)
+
+        # One-hot encode the labels
+        num_classes = len(set(self.labels)) + 1
+        labels_one_hot = tf.one_hot(self.labels, num_classes)
+
+        return spectrograms, labels_one_hot
+
+    def preprocess_batch_parallel(self, use_mel_spectrogram=False, n_mels=128, n_fft=2048, hop_length=512, n_jobs=-1):
+        """
+        Preprocess all audio files in the batch using parallel processing.
+
+        Args:
+            use_mel_spectrogram (bool): Whether to compute mel-spectrograms instead of standard spectrograms.
+            n_mels (int): Number of mel bands (used only if use_mel_spectrogram is True).
+            n_fft (int): FFT window size.
+            hop_length (int): Number of samples between successive frames in the spectrogram computation.
+            n_jobs (int): Number of parallel jobs (-1 uses all available CPUs).
+
+        Returns:
+            tuple: A tuple containing:
+                - numpy array of preprocessed spectrograms (shape: [batch_size, frequency_bins, time_frames, n_channel]).
+                - numpy array of one-hot encoded labels.
+        """
+        spectrograms = Parallel(n_jobs=n_jobs)(
+            delayed(self._process_file)(
+                file_path, use_mel_spectrogram, n_mels, n_fft, hop_length
+            ) for file_path in self.file_paths
+        )
+
+        # Convert the list of spectrograms to a numpy array
+        spectrograms = np.array(spectrograms)  # Shape: (batch_size, frequency_bins, time_frames, n_channel)
+
+        # One-hot encode the labels
+        num_classes = len(set(self.labels)) + 1
+        labels_one_hot = tf.one_hot(self.labels, num_classes)
+
+        return spectrograms, labels_one_hot
+
+
 
 
