@@ -3,6 +3,9 @@ import librosa
 import tensorflow as tf
 from joblib import Parallel, delayed
 
+from src.logger import logger  # Import the centralized logger
+
+
 class AudioProcess:
     """
     A class for loading and preprocessing a single audio file (mono or multi channels).
@@ -34,7 +37,13 @@ class AudioProcess:
         Load the audio file and ensure the audio signal is in the shape (n, N),
         where n is the number of channels and N is the number of samples.
         """
-        self.y, self.sr = librosa.load(self.file_path, sr=None, mono=False)
+        logger.info(f"Loading audio file: {self.file_path}")
+        try:
+            self.y, self.sr = librosa.load(self.file_path, sr=None, mono=False)
+            logger.debug(f"Loaded audio file with sample rate: {self.sr}, channels: {self.channel}")
+        except Exception as e:
+            logger.error(f"Error loading file {self.file_path}: {e}")
+            raise
 
         # If the audio is mono (1D array), reshape it to (1, N)
         if self.y.ndim == 1:
@@ -53,11 +62,17 @@ class AudioProcess:
         If the audio is multi-channel, each channel is resampled individually.
         """
         if self.sr != self.target_sample_rate:
-            y_resampled = []
-            for channel in self.y_processed:
-                y_resampled.append(librosa.resample(channel, orig_sr=self.sr, target_sr=self.target_sample_rate))
-            self.y_processed = np.array(y_resampled)
-            self.sr = self.target_sample_rate
+            logger.info(f"Resampling audio from {self.sr} Hz to {self.target_sample_rate} Hz")
+            try:
+                y_resampled = []
+                for channel in self.y_processed:
+                    y_resampled.append(librosa.resample(channel, orig_sr=self.sr, target_sr=self.target_sample_rate))
+                self.y_processed = np.array(y_resampled)
+                self.sr = self.target_sample_rate
+                logger.info("Resampling completed successfully")
+            except Exception as e:
+                logger.error(f"Error during resampling: {e}")
+                raise
 
     def pad_or_truncate(self, target_length_ms):
         """
@@ -66,42 +81,58 @@ class AudioProcess:
         Args:
             target_length_ms (int): Target length in milliseconds.
         """
-        # Convert target length from milliseconds to samples
-        target_length_samples = int((target_length_ms / 1000) * self.sr)
-    
-        # Get the current length of the audio signal
-        current_length = len(self.y_processed[0])
-    
-        if current_length < target_length_samples:
-            # Padding: Add symmetric padding to the left and right
-            padding = target_length_samples - current_length
-            left_padding = padding // 2
-            right_padding = padding - left_padding
-            y_padded = []
-            for channel in self.y_processed:
-                y_padded.append(np.pad(channel, (left_padding, right_padding), mode='constant'))
-            self.y_processed = np.array(y_padded)
-        else:
-            # Truncation: Keep the center of the audio signal
-            start = (current_length - target_length_samples) // 2
-            end = start + target_length_samples
-            y_truncated = []
-            for channel in self.y_processed:
-                y_truncated.append(channel[start:end])
-            self.y_processed = np.array(y_truncated)
+        logger.info(f"Padding or truncating audio to {target_length_ms} ms")
+        try:
+            # Convert target length from milliseconds to samples
+            target_length_samples = int((target_length_ms / 1000) * self.sr)
+        
+            # Get the current length of the audio signal
+            current_length = len(self.y_processed[0])
+            logger.debug(f"Current length:  {current_length}s")
+            if current_length < target_length_samples:
+                # Padding: Add symmetric padding to the left and right
+                logger.debug(f"Padding start")
+                padding = target_length_samples - current_length
+                left_padding = padding // 2
+                right_padding = padding - left_padding
+                y_padded = []
+                for channel in self.y_processed:
+                    y_padded.append(np.pad(channel, (left_padding, right_padding), mode='constant'))
+                self.y_processed = np.array(y_padded)
+                logger.debug(f"Padding end")
+            else:
+                # Truncation: Keep the center of the audio signal
+                logger.debug(f"Truncation start")
+                start = (current_length - target_length_samples) // 2
+                end = start + target_length_samples
+                y_truncated = []
+                for channel in self.y_processed:
+                    y_truncated.append(channel[start:end])
+                self.y_processed = np.array(y_truncated)
+                logger.debug(f"Truncation end")
+            logger.info("Padding or truncation completed successfully")
+        except Exception as e:
+            logger.error(f"Error during padding or truncation: {e}")
+            raise
 
     def rechanneling(self):
         """
         Convert the audio signal to the target number of channels (self.target_channel).
 
         """
-        if self.target_channel == 1 and self.channel > 1:  # Multi to mono
-                # Downmix all channels to mono by averaging the channels
-                self.y_processed = np.mean(self.y_processed, axis=0, keepdims=True)
-        elif self.target_channel == 2:  # Convert to stereo
-            if self.channel == 1:  # Mono to stereo
-                # Duplicate the mono channel to create stereo
-                self.y_processed = np.stack([self.y_processed[0], self.y_processed[0]], axis=0)
+        logger.info(f"Rechanneling audio to {self.target_channel} channels")
+        try:
+            if self.target_channel == 1 and self.channel > 1:  # Multi to mono
+                    # Downmix all channels to mono by averaging the channels
+                    self.y_processed = np.mean(self.y_processed, axis=0, keepdims=True)
+            elif self.target_channel == 2:  # Convert to stereo
+                if self.channel == 1:  # Mono to stereo
+                    # Duplicate the mono channel to create stereo
+                    self.y_processed = np.stack([self.y_processed[0], self.y_processed[0]], axis=0)
+            logger.info("Rechanneling completed successfully")
+        except Exception as e:
+            logger.error(f"Error during rechanneling: {e}")
+            raise
 
     def compute_mel_spectrogram(self, n_mels=128, n_fft=2048, hop_length=512):
         """
@@ -114,6 +145,7 @@ class AudioProcess:
         Returns:
             numpy array: Mel-spectrogram.
         """
+        logger.debug(f"Computing Mel-Spectrogram")
         mel_spectrogram = librosa.feature.melspectrogram(y=self.y_processed, sr=self.sr, n_mels=n_mels, n_fft=n_fft, hop_length=hop_length)
         mel_spectrogram_db = librosa.power_to_db(mel_spectrogram, ref=np.max)
         return mel_spectrogram_db
@@ -126,6 +158,7 @@ class AudioProcess:
         Returns:
             numpy array: Spectrogram.
         """
+        logger.debug(f"Computing Spectrogram")
         spectrogram = librosa.stft(self.y_processed, n_fft=n_fft, hop_length=hop_length)
         spectrogram_db = librosa.amplitude_to_db(np.abs(spectrogram), ref=np.max)
         return spectrogram_db
@@ -141,6 +174,7 @@ class AudioProcess:
         Returns:
             numpy array: Normalized spectrogram.
         """
+        logger.debug(f"Computing Normalization")
         normalized = (spectrogram - spectrogram.min()) / (spectrogram.max() - spectrogram.min())  # Normalize to [0, 1]
         return 2 * normalized - 1  # Scale to [-1, 1]
 
@@ -158,23 +192,21 @@ class AudioProcess:
         Returns:
             numpy array: Normalized spectrogram or mel-spectrogram.
         """
-        print("beginning preprocess")
+        logger.info(f"Beginning audio preprocessing")
         self.load()
         self.resample()
-        print("resample done")
-        print(f"target_length_ms: {self.target_length_ms}")
         if self.target_length_ms != None:
-            print("padding")
             self.pad_or_truncate(self.target_length_ms)
-        print("rechanneling")
         self.rechanneling()
 
+        logger.info(f"Computing spectrogram")
         if use_mel_spectrogram:
             spectrogram = self.compute_mel_spectrogram(n_mels=n_mels, n_fft=n_fft, hop_length=hop_length)
         else:
             spectrogram = self.compute_spectrogram(n_fft=n_fft, hop_length=hop_length)
-        print("preprocessing done")
-        return self.normalize_spectrogram(spectrogram)
+        normalized_spectrogram = self.normalize_spectrogram(spectrogram)
+        logger.info(f"Preprocessing audio done")
+        return normalized_spectrogram
 
 
 class BatchAudioProcessor:
@@ -246,10 +278,16 @@ class BatchAudioProcessor:
                 - numpy array of preprocessed spectrograms (shape: [batch_size, frequency_bins, time_frames, n_channel]).
                 - numpy array of one-hot encoded labels.
         """
+        logger.info("Starting serial batch preprocessing...")
         spectrograms = []
-        for file_path in self.file_paths:
-            spectrogram = self._process_file(file_path, use_mel_spectrogram, n_mels, n_fft, hop_length)
-            spectrograms.append(spectrogram)
+        for i, file_path in enumerate(self.file_paths):
+            logger.info(f"Processing file {i + 1}/{len(self.file_paths)}: {file_path}")
+            try:
+                spectrogram = self._process_file(file_path, use_mel_spectrogram, n_mels, n_fft, hop_length)
+                spectrograms.append(spectrogram)
+            except Exception as e:
+                logger.error(f"Error processing file {file_path}: {e}")
+        logger.info("Serial batch preprocessing completed.\n")
 
         # Convert the list of spectrograms to a numpy array
         spectrograms = np.array(spectrograms)  # Shape: (batch_size, frequency_bins, time_frames, n_channel)
@@ -276,11 +314,17 @@ class BatchAudioProcessor:
                 - numpy array of preprocessed spectrograms (shape: [batch_size, frequency_bins, time_frames, n_channel]).
                 - numpy array of one-hot encoded labels.
         """
-        spectrograms = Parallel(n_jobs=n_jobs)(
-            delayed(self._process_file)(
-                file_path, use_mel_spectrogram, n_mels, n_fft, hop_length
-            ) for file_path in self.file_paths
-        )
+        logger.info("Starting parallel batch preprocessing...")
+        try:
+            spectrograms = Parallel(n_jobs=n_jobs)(
+                delayed(self._process_file)(
+                    file_path, use_mel_spectrogram, n_mels, n_fft, hop_length
+                ) for file_path in self.file_paths
+            )
+            logger.info("Parallel batch preprocessing completed.")
+        except Exception as e:
+            logger.error(f"Error during parallel batch preprocessing: {e}")
+            raise
 
         # Convert the list of spectrograms to a numpy array
         spectrograms = np.array(spectrograms)  # Shape: (batch_size, frequency_bins, time_frames, n_channel)
