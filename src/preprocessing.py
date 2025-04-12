@@ -9,7 +9,7 @@ class AudioProcess:
     A class for loading and preprocessing a single audio file (mono or multi channels).
     """
 
-    def __init__(self, file_path, target_sample_rate=44100, target_channel = 2):
+    def __init__(self, file_path, target_sample_rate=44100, target_channel = 2, target_length_ms=None):
         """
         Initialize the Audio class.
 
@@ -22,6 +22,7 @@ class AudioProcess:
         # Target properties
         self.target_sample_rate = target_sample_rate
         self.target_channel = target_channel
+        self.target_length_ms = None
         # Signal properties
         self.sr = None
         self.channel = None
@@ -103,4 +104,74 @@ class AudioProcess:
                 # Duplicate the mono channel to create stereo
                 self.y_processed = np.stack([self.y_processed[0], self.y_processed[0]], axis=0)
 
-    
+    def compute_mel_spectrogram(self, n_mels=128, n_fft=2048, hop_length=512):
+        """
+        Compute the mel-spectrogram of the audio.
+
+        Args:
+            y (numpy array): Audio time series.
+            sr (int): Sample rate.
+
+        Returns:
+            numpy array: Mel-spectrogram.
+        """
+        mel_spectrogram = librosa.feature.melspectrogram(y=self.y_processed, sr=self.sr, n_mels=n_mels, n_fft=n_fft, hop_length=hop_length)
+        mel_spectrogram_db = librosa.power_to_db(mel_spectrogram, ref=np.max)
+        return mel_spectrogram_db
+
+
+    def compute_spectrogram(self, n_fft=2048, hop_length=512):
+        """
+        Compute the spectrogram of the audio.
+
+        Returns:
+            numpy array: Spectrogram.
+        """
+        spectrogram = librosa.stft(self.y_processed, n_fft=n_fft, hop_length=hop_length)
+        spectrogram_db = librosa.amplitude_to_db(np.abs(spectrogram), ref=np.max)
+        return spectrogram_db
+
+
+    def normalize_spectrogram(self, spectrogram):
+        """
+        Normalize the spectrogram to the range [-1, 1].
+
+        Args:
+            spectrogram (numpy array): Spectrogram to normalize.
+
+        Returns:
+            numpy array: Normalized spectrogram.
+        """
+        normalized = (spectrogram - spectrogram.min()) / (spectrogram.max() - spectrogram.min())  # Normalize to [0, 1]
+        return 2 * normalized - 1  # Scale to [-1, 1]
+
+    def preprocess(self, use_mel_spectrogram=False, n_mels=128, n_fft=2048, hop_length=512):
+        """
+        Run the full preprocessing pipeline: load, resample, convert to stereo,
+        and transform to spectrogram or mel-spectrogram.
+
+        Args:
+            use_mel_spectrogram (bool): Whether to compute a mel-spectrogram instead of a standard spectrogram.
+            n_mels (int): Number of mel bands (used only if use_mel_spectrogram is True).
+            n_fft (int): FFT window size.
+            hop_length (int): The number of samples between successive frames in the spectrogram computation.
+
+        Returns:
+            numpy array: Normalized spectrogram or mel-spectrogram.
+        """
+        self.load()
+        self.resample()
+
+        if self.target_length_ms != None:
+            self.pad_or_truncate(self.target_length_ms)
+
+        self.rechanneling()
+
+        if use_mel_spectrogram:
+            spectrogram = self.compute_mel_spectrogram(n_mels=n_mels, n_fft=n_fft, hop_length=hop_length)
+        else:
+            spectrogram = self.compute_spectrogram(n_fft=n_fft, hop_length=hop_length)
+
+        return self.normalize_spectrogram(spectrogram)
+
+

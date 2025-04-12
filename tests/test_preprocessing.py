@@ -90,3 +90,47 @@ def test_rechanneling(audio_processor, target_channels, expected_shape):
     elif audio_processor.channel == 2 and target_channels == 1:  # Stereo to mono
         expected_mono = np.mean(audio_processor.y, axis=0, keepdims=True)
         assert np.all(audio_processor.y_processed == expected_mono)
+
+@pytest.mark.parametrize("audio_processor", [1, 2], indirect=True)
+def test_normalize_spectrogram(audio_processor):
+    """
+    Test the normalize_spectrogram method for a spectrogram.
+    """
+    # Generate a dummy spectrogram
+    spectrogram = np.random.rand(128, 128) * 100  # Random spectrogram with large values
+
+    # Normalize the spectrogram
+    normalized = audio_processor.normalize_spectrogram(spectrogram)
+
+    # Assert the normalized spectrogram is within the range [-1, 1]
+    assert np.all(normalized >= -1) and np.all(normalized <= 1), "Normalized spectrogram is not in range [-1, 1]"
+
+@pytest.mark.parametrize("audio_processor, use_mel_spectrogram, target_channels, expected_shape", [
+    (1, False, 2, (2, 1025, 87)),  # Mono to stereo, standard spectrogram 
+    (1, True, 1, (1, 128, 87)),    # Mono to mono, mel-spectrogram
+    (2, True, 1, (1, 128, 87)),    # Stereo to mono, mel-spectrogram 
+    (2, False, 2, (2, 1025, 87)),  # Stereo to stereo, standard spectrogram
+], indirect=["audio_processor"])
+def test_preprocess(audio_processor, use_mel_spectrogram, target_channels, expected_shape):
+    """
+    Test the preprocess method for various configurations with a final audio length of 1000 ms.
+    expected shape = (number of channel, frequency bins, time frames)
+    frequency bins = n_fft // 2 + 1 = 1025 for spectrogram, n_mel=128 for mel-spectrogram
+    time frames = (N + librosa padding - n_fft) / hop) + 1 = 87
+        with padding = hop_length - (N mod hop_length) 
+    """
+    audio_processor.target_length_ms = 1000
+    audio_processor.channel_target = target_channels
+    spectrogram = audio_processor.preprocess(use_mel_spectrogram=use_mel_spectrogram, n_mels=128, n_fft=2048, hop_length=512)
+
+    # Assert the output is a numpy array
+    assert isinstance(spectrogram, np.ndarray), "Output is not a numpy array"
+
+    # Assert the spectrogram is not empty
+    assert spectrogram.size > 0, "Spectrogram is empty"
+
+    # Assert the spectrogram values are within the range [-1, 1]
+    assert np.all(spectrogram >= -1) and np.all(spectrogram <= 1), "Spectrogram values are not in range [-1, 1]"
+
+    # Assert the shape of the spectrogram matches the expected shape
+    assert spectrogram.shape == expected_shape, f"Unexpected spectrogram shape: {spectrogram.shape}"
