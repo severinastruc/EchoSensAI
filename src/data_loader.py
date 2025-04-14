@@ -1,7 +1,7 @@
 import csv
 from pathlib import Path
+import os
 
-import numpy as np
 import pandas as pd
 import librosa
 
@@ -42,25 +42,27 @@ def get_audio_UrbanSound8K(path: str):
             name_list.append(name)
 
 
-    return name_list, paths_list, class_list, fold_number
+    return pd.DataFrame({'path': paths_list, 'class':class_list, 'fold':fold_number}, index=name_list)
 
-def load_audio_file(path: str, sr=None, mono=False):
+def split_folds(dataframe, test_fold):
     """
-    Load the audio file as a list of value. 
-    The loaded file has its original sample rate or a defined sample rate stated
-    in the input. The output can have one (mono) or two channel (stereo).
- 
+    Split a DataFrame into two DataFrames based on the 'fold' column.
+
     Args:
-        path (str): Path of the audio file.
-        sr (float, optional): Value of the audio file sample rate.
-        mono (bool, optional): Number of channel (stereo or mono).
-    
+        dataframe (pandas.DataFrame): The input DataFrame containing a 'fold' column.
+        test_fold (int): The fold number to use as the test set.
+
     Returns:
-        y (list): List of the value of the audio file.
-        sr (float): Sample rate of the audio file.     
+        train_df (pandas.DataFrame): DataFrame containing rows where 'fold' != test_fold.
+        test_df (pandas.DataFrame): DataFrame containing rows where 'fold' == test_fold.
     """
-    y, sr = librosa.load(path, sr=sr, mono=mono)
-    return y, sr
+    # Select rows where 'fold' equals the test_fold
+    test_df = dataframe[dataframe['fold'] == test_fold]
+
+    # Select rows where 'fold' does not equal the test_fold
+    train_df = dataframe[dataframe['fold'] != test_fold]
+
+    return train_df, test_df
 
 
 

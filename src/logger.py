@@ -21,4 +21,6 @@ logging.basicConfig(
     datefmt='%m/%d/%Y %I:%M:%S %p',
 )
 
-logger = logging.getLogger("PreprocessingPipeline") # Create a logger instance
+logger_prep = logging.getLogger("PreprocessingPipeline") # Create a logger instance
+logger_main = logging.getLogger("MainPipeline") # Create a logger instance
+
