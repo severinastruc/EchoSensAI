@@ -1,9 +1,10 @@
-import src.data_loader as dl
-from src.utils import load_config
-import src.preprocessing as prep
-from src.logger import logger_main  # Import the main logger
-import os
 import numpy as np
+from tensorflow.keras.callbacks import EarlyStopping
+
+from src.logger import logger_main
+from src.model import create_crnn_model
+from src.data_loader import get_audio_UrbanSound8K, load_or_preprocess, split_folds, add_spectrograms_to_df
+from src.utils import load_config
 
 # Load configuration
 CONFIG_PATH = "./config/config.json"
@@ -13,60 +14,57 @@ config_preprocess = config["preprocess_constants"]
 
 DATASET_PATH = config["dataset_path"]
 PREPROCESSED_DIR = config["preproc_ds_path"]
-MONO = config_preprocess["target_channel"]
-
-BOOL_NMELS = config_preprocess["use_mel_spectrogram"]
-N_MELS = config_preprocess["n_mels"]
-N_FFT = config_preprocess["n_fft"]
-HOP_LENGTH = config_preprocess["hop_length"]
 
 # Load the audio dataset
 logger_main.info(f"Loading Audio dataset: {DATASET_PATH}")
-df_dataset = dl.get_audio_UrbanSound8K(DATASET_PATH)
+df_dataset = get_audio_UrbanSound8K(DATASET_PATH)
+print(df_dataset.head(10))
 
-df_dataset["spectrogram"] = None
-df_dataset["label"] = None
+# Load or preprocess data
+subset_size = None #config.get("subset_size", None)  # Use subset for faster testing
+spectrograms, labels, file_names = load_or_preprocess(df_dataset, config_preprocess, PREPROCESSED_DIR, subset_size)
 
+# Add spectrograms and labels to df_dataset
+df_dataset = add_spectrograms_to_df(df_dataset, spectrograms, labels, file_names, logger_main)
+# Split the dataset into training and testing sets
+train_df, test_df = split_folds(df_dataset, test_fold=5)
 
-if prep.isPreprocessSaved(PREPROCESSED_DIR):
-    logger_main.info("Preprocessed data found. Loading saved spectrograms...")
-    spectrograms, labels = prep.load_saved_spectrograms(PREPROCESSED_DIR)
+# Cross-validation
+test_losses, test_accuracies = [], []
+for fold_idx in range(1, 10):
+    logger_main.info(f"Starting fold {fold_idx}/10...")
 
-    # Assign loaded spectrograms and labels to the correct rows in df_dataset
-    for file_name, spectrogram, label in zip(df_dataset.index, spectrograms, labels):
-        prep.add_spectrogram_to_df(df_dataset, file_name, spectrogram, label, logger_main)
+    # Split the dataset into training and testing sets
+    train_df, test_df = split_folds(df_dataset, test_fold=fold_idx)
 
-else:
-    logger_main.info("No preprocessed data found. Starting preprocessing...")
-    processor = prep.BatchAudioProcessor(
-        file_paths=df_dataset['path'].tolist(),
-        labels=df_dataset['class'].tolist(),
-        target_sample_rate=config_preprocess["target_sample_rate"],
-        target_channel=config_preprocess["target_channel"],
-        target_length_ms=config_preprocess["target_audio_length"]
+    # Extract spectrograms and labels
+    X_train = np.array(train_df['spectrogram'].tolist(), dtype=np.float32)
+    y_train = np.array(train_df['class'].tolist(), dtype=np.int32)
+    X_test = np.array(test_df['spectrogram'].tolist(), dtype=np.float32)
+    y_test = np.array(test_df['class'].tolist(), dtype=np.int32)
+
+    # Create the CRNN model
+    input_shape = X_train.shape[1:]
+    num_classes = len(np.unique(y_train))
+    model = create_crnn_model(input_shape, num_classes)
+
+    # Train the model
+    early_stopping = EarlyStopping(monitor='val_accuracy', patience=3, restore_best_weights=True)
+    history = model.fit(
+        X_train, y_train,
+        validation_data=(X_test, y_test),
+        epochs=10,
+        batch_size=16,
+        verbose=1,
+        callbacks=[early_stopping]
     )
-    spectrograms, labels = processor.preprocess_batch_serial(
-        use_mel_spectrogram=True, n_mels=N_MELS, n_fft=N_FFT, hop_length=HOP_LENGTH
-    )
 
-    # Save preprocessed data
-    for file_name, spectrogram, label in zip(df_dataset.index, spectrograms, labels):
-        # Save the spectrogram and label
-        if prep.save_spectrogram(PREPROCESSED_DIR, file_name, spectrogram, label, logger_main):
-            # Add to the DataFrame only if saving was successful
-            prep.add_spectrogram_to_df(df_dataset, file_name, spectrogram, label, logger_main)
+    # Evaluate the model
+    test_loss, test_accuracy = model.evaluate(X_test, y_test, verbose=0)
+    test_losses.append(test_loss)
+    test_accuracies.append(test_accuracy)
+    logger_main.info(f"Fold {fold_idx} - Test Accuracy: {test_accuracy:.4f}")
 
-    logger_main.info("Preprocessed data saved.")
-
-
-for fold_idx in range(10):
-    logger_main.info(f"Starting fold {fold_idx + 1}/10...")
-    train_df, test_df = dl.split_folds(df_dataset, test_fold=fold_idx)
-
-    # Train model
-
-    # Test model
-
-    # End of cross validation
-    logger_main.info(f"Fold {fold_idx + 1} completed.")
-
+# Log final results
+logger_main.info(f"Test Losses: Count={len(test_losses)}, Mean={np.mean(test_losses):.4f}, Std={np.std(test_losses):.4f}")
+logger_main.info(f"Test Accuracies: Count={len(test_accuracies)}, Mean={np.mean(test_accuracies):.4f}, Std={np.std(test_accuracies):.4f}")

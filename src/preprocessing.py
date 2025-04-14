@@ -175,9 +175,14 @@ class AudioProcess:
         Returns:
             numpy array: Normalized spectrogram.
         """
-        logger_prep.debug(f"Computing Normalization")
-        normalized = (spectrogram - spectrogram.min()) / (spectrogram.max() - spectrogram.min())  # Normalize to [0, 1]
-        return 2 * normalized - 1  # Scale to [-1, 1]
+        try:
+            logger_prep.debug(f"Computing Normalization")
+            normalized = (spectrogram - spectrogram.min()) / (spectrogram.max() - spectrogram.min())  # Normalize to [0, 1]
+            return normalized
+            #return 2 * normalized - 1  # Scale to [-1, 1]
+        except Exception as e:
+            logger_prep.error(f"Error normalizing spectrogram for file {self.file_path}: {e}")
+            raise
 
     def preprocess(self, use_mel_spectrogram=False, n_mels=128, n_fft=2048, hop_length=512):
         """
