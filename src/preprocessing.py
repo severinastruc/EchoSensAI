@@ -167,7 +167,7 @@ class AudioProcess:
 
     def normalize_spectrogram(self, spectrogram):
         """
-        Normalize the spectrogram to the range [-1, 1].
+        Normalize the spectrogram to the range [0, 1].
 
         Args:
             spectrogram (numpy array): Spectrogram to normalize.
@@ -177,9 +177,11 @@ class AudioProcess:
         """
         try:
             logger_prep.debug(f"Computing Normalization")
-            normalized = (spectrogram - spectrogram.min()) / (spectrogram.max() - spectrogram.min())  # Normalize to [0, 1]
+            if spectrogram.max() == spectrogram.min():
+                logger_prep.warning(f"Spectrogram has constant values. Skipping normalization.")
+                return spectrogram  # Return the unnormalized spectrogram
+            normalized = (spectrogram - spectrogram.min()) / (spectrogram.max() - spectrogram.min())
             return normalized
-            #return 2 * normalized - 1  # Scale to [-1, 1]
         except Exception as e:
             logger_prep.error(f"Error normalizing spectrogram for file {self.file_path}: {e}")
             raise
@@ -210,7 +212,9 @@ class AudioProcess:
             spectrogram = self.compute_mel_spectrogram(n_mels=n_mels, n_fft=n_fft, hop_length=hop_length)
         else:
             spectrogram = self.compute_spectrogram(n_fft=n_fft, hop_length=hop_length)
+        logger_prep.debug(f"Spectrogram before normalization: min={spectrogram.min()}, max={spectrogram.max()}")
         normalized_spectrogram = self.normalize_spectrogram(spectrogram)
+        logger_prep.debug(f"Spectrogram after normalization: min={normalized_spectrogram.min()}, max={normalized_spectrogram.max()}")
         logger_prep.info(f"Preprocessing audio done")
         return normalized_spectrogram
 
@@ -437,7 +441,7 @@ def add_spectrogram_to_df(df_dataset, file_name, spectrogram, label, logger):
         # Assign spectrogram and label to the DataFrame
         df_dataset.at[file_name, 'spectrogram'] = spectrogram
         df_dataset.at[file_name, 'label'] = label
-        logger.info(f"Added spectrogram and label to df_dataset for {file_name}")
+        logger.info(f"Added spectrogram and label to df_dataset for {file_name}: min={spectrogram.min()}, max={spectrogram.max()}")
         return True
     except Exception as e:
         logger.error(f"Error adding spectrogram and label to df_dataset for {file_name}: {e}")
